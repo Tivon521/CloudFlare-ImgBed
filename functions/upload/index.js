@@ -90,29 +90,12 @@ function normalizeUploadChannel(uploadChannel) {
     return UPLOAD_CHANNEL_MAP[String(uploadChannel || '').toLowerCase()] || null;
 }
 
-function isImageFileType(fileType = '') {
-    return String(fileType || '').toLowerCase().startsWith('image/');
-}
-
 function getAutoUploadChannel(fileType = '') {
-    return isImageFileType(fileType) ? 'TelegramNew' : 'WebDAV';
-}
-
-function shouldIgnoreFrontendTelegramOverride(request, url, uploadChannelParam, fileType = '') {
-    if (String(uploadChannelParam || '').toLowerCase() !== 'telegram' || isImageFileType(fileType)) {
-        return false;
+    const normalizedType = String(fileType || '').toLowerCase();
+    if (normalizedType.startsWith('image/')) {
+        return 'TelegramNew';
     }
-
-    const referer = request.headers.get('referer') || '';
-    if (!referer) {
-        return false;
-    }
-
-    try {
-        return new URL(referer).origin === url.origin;
-    } catch {
-        return false;
-    }
+    return 'WebDAV';
 }
 
 // 通用文件上传处理函数
@@ -147,13 +130,10 @@ async function processFileUpload(context, formdata = null) {
         return createResponse('Error: No file provided', { status: 400 });
     }
     const fileType = file.type;
-    const ignoreFrontendTelegramOverride = shouldIgnoreFrontendTelegramOverride(request, url, urlParamUploadChannel, fileType);
-    const uploadChannel = ignoreFrontendTelegramOverride
-        ? getAutoUploadChannel(fileType)
-        : (normalizeUploadChannel(urlParamUploadChannel) || getAutoUploadChannel(fileType));
+    const uploadChannel = normalizeUploadChannel(urlParamUploadChannel) || getAutoUploadChannel(fileType);
 
     // 将指定的渠道名称存入 context，供后续上传函数使用。自动 WebDAV 分流默认使用 openlist。
-    context.specifiedChannelName = (ignoreFrontendTelegramOverride ? null : urlParamChannelName) || (uploadChannel === 'WebDAV' ? DEFAULT_WEBDAV_CHANNEL_NAME : null);
+    context.specifiedChannelName = urlParamChannelName || (uploadChannel === 'WebDAV' ? DEFAULT_WEBDAV_CHANNEL_NAME : null);
     let fileName = file.name;
     const fileSizeBytes = file.size; // 文件大小，单位字节
     const fileSize = (fileSizeBytes / 1024 / 1024).toFixed(2); // 文件大小，单位MB

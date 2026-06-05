@@ -7,29 +7,12 @@ import { getDatabase, checkDatabaseConfig } from '../utils/databaseAdapter.js';
 
 const DEFAULT_WEBDAV_CHANNEL_NAME = 'openlist';
 
-function isImageFileType(fileType = '') {
-    return String(fileType || '').toLowerCase().startsWith('image/');
-}
-
 function getAutoChunkUploadChannel(fileType = '') {
-    return isImageFileType(fileType) ? 'telegram' : 'webdav';
-}
-
-function shouldIgnoreFrontendTelegramOverride(request, url, uploadChannelParam, fileType = '') {
-    if (String(uploadChannelParam || '').toLowerCase() !== 'telegram' || isImageFileType(fileType)) {
-        return false;
+    const normalizedType = String(fileType || '').toLowerCase();
+    if (normalizedType.startsWith('image/')) {
+        return 'telegram';
     }
-
-    const referer = request.headers.get('referer') || '';
-    if (!referer) {
-        return false;
-    }
-
-    try {
-        return new URL(referer).origin === url.origin;
-    } catch {
-        return false;
-    }
+    return 'webdav';
 }
 
 // 初始化分块上传
@@ -58,15 +41,13 @@ export async function initializeChunkedUpload(context) {
         const uploadIp = getUploadIp(request);
         const ipAddress = await getIPAddress(uploadIp);
 
-        // 获取上传渠道。显式 URL 参数优先；但站内旧前端默认带 telegram 时，非图片仍按自动分流处理。
-        const urlParamUploadChannel = url.searchParams.get('uploadChannel');
-        const ignoreFrontendTelegramOverride = shouldIgnoreFrontendTelegramOverride(request, url, urlParamUploadChannel, originalFileType);
-        const uploadChannel = ignoreFrontendTelegramOverride ? getAutoChunkUploadChannel(originalFileType) : (urlParamUploadChannel || getAutoChunkUploadChannel(originalFileType));
+        // 获取上传渠道。显式 URL 参数优先；未指定时按文件 MIME 类型自动分流。
+        const uploadChannel = url.searchParams.get('uploadChannel') || getAutoChunkUploadChannel(originalFileType);
         if (uploadChannel === 'webdav') {
             return createResponse('Error: WebDAV channel does not support chunked uploads. Please use non-chunked upload within your Cloudflare request body limit.', { status: 400 });
         }
         // 获取指定的渠道名称
-        const channelName = (ignoreFrontendTelegramOverride ? null : url.searchParams.get('channelName')) || (uploadChannel === 'webdav' ? DEFAULT_WEBDAV_CHANNEL_NAME : '');
+        const channelName = url.searchParams.get('channelName') || (uploadChannel === 'webdav' ? DEFAULT_WEBDAV_CHANNEL_NAME : '');
 
         // 存储上传会话信息
         const sessionInfo = {
@@ -151,15 +132,13 @@ export async function handleChunkUpload(context) {
             return createResponse('Error: Upload session expired', { status: 410 });
         }
 
-        // 获取上传渠道。显式 URL 参数优先；但站内旧前端默认带 telegram 时，非图片仍按自动分流处理。
-        const urlParamUploadChannel = url.searchParams.get('uploadChannel');
-        const ignoreFrontendTelegramOverride = shouldIgnoreFrontendTelegramOverride(request, url, urlParamUploadChannel, originalFileType);
-        const uploadChannel = ignoreFrontendTelegramOverride ? getAutoChunkUploadChannel(originalFileType) : (urlParamUploadChannel || sessionInfo.uploadChannel || getAutoChunkUploadChannel(originalFileType));
+        // 获取上传渠道。显式 URL 参数优先；未指定时沿用会话渠道，再按文件 MIME 类型自动分流。
+        const uploadChannel = url.searchParams.get('uploadChannel') || sessionInfo.uploadChannel || getAutoChunkUploadChannel(originalFileType);
         if (uploadChannel === 'webdav') {
             return createResponse('Error: WebDAV channel does not support chunked uploads. Please use non-chunked upload within your Cloudflare request body limit.', { status: 400 });
         }
         // 获取指定的渠道名称
-        const channelName = (ignoreFrontendTelegramOverride ? null : url.searchParams.get('channelName')) || sessionInfo.channelName || (uploadChannel === 'webdav' ? DEFAULT_WEBDAV_CHANNEL_NAME : '');
+        const channelName = url.searchParams.get('channelName') || sessionInfo.channelName || (uploadChannel === 'webdav' ? DEFAULT_WEBDAV_CHANNEL_NAME : '');
 
         // 将渠道名称存入 context
         context.specifiedChannelName = channelName;
