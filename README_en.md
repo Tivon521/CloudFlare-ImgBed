@@ -119,6 +119,8 @@ Provides detailed deployment documentation, feature docs, development plans, upd
 
 - **Ecosystem**: We welcome community participation in the ecosystem construction. Feel free to submit PRs or Issues, and high-quality content can be found on the [official ecosystem page](https://cfbed.sanyue.de/en/about/ecosystem.html).
 
+- **Telegram Bot**: Community-maintained Telegram bot project: [Tivon521/telegrambot](https://github.com/Tivon521/telegrambot).
+
 - **Sponsor**: Maintaining the project is not easy. If you like it, please support the author. Your support is the motivation to keep going~
 
   <a href="https://afdian.com/a/marseventh"><img width="200" src="https://pic1.afdiancdn.com/static/img/welcome/button-sponsorme.png" alt=""></a>
