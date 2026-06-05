@@ -4,6 +4,27 @@ import { retryFailedChunks, cleanupFailedMultipartUploads, checkChunkUploadStatu
 import { S3Client, CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
 import { getDatabase } from '../utils/databaseAdapter.js';
 
+function isImageFileType(fileType = '') {
+    return String(fileType || '').toLowerCase().startsWith('image/');
+}
+
+function shouldIgnoreFrontendTelegramOverride(request, url, uploadChannelParam, fileType = '') {
+    if (String(uploadChannelParam || '').toLowerCase() !== 'telegram' || isImageFileType(fileType)) {
+        return false;
+    }
+
+    const referer = request.headers.get('referer') || '';
+    if (!referer) {
+        return false;
+    }
+
+    try {
+        return new URL(referer).origin === url.origin;
+    } catch {
+        return false;
+    }
+}
+
 // 处理分块合并
 export async function handleChunkMerge(context) {
     const { request, env, url, waitUntil } = context;
@@ -44,14 +65,16 @@ export async function handleChunkMerge(context) {
             return createResponse('Error: Upload session expired', { status: 410 });
         }
 
-        // 使用会话中的上传渠道，或者从URL参数获取
-        uploadChannel = url.searchParams.get('uploadChannel') || sessionInfo.uploadChannel || 'telegram';
+        // 使用会话中的上传渠道，或者从URL参数获取；但站内旧前端默认带 telegram 时，非图片仍按自动分流处理。
+        const urlParamUploadChannel = url.searchParams.get('uploadChannel');
+        const ignoreFrontendTelegramOverride = shouldIgnoreFrontendTelegramOverride(request, url, urlParamUploadChannel, originalFileType);
+        uploadChannel = ignoreFrontendTelegramOverride ? 'webdav' : (urlParamUploadChannel || sessionInfo.uploadChannel || 'telegram');
         if (uploadChannel === 'webdav') {
             return createResponse('Error: WebDAV channel does not support chunked uploads. Please use non-chunked upload within your Cloudflare request body limit.', { status: 400 });
         }
 
         // 获取指定的渠道名称（优先URL参数，其次会话信息）
-        const channelName = url.searchParams.get('channelName') || sessionInfo.channelName || '';
+        const channelName = (ignoreFrontendTelegramOverride ? null : url.searchParams.get('channelName')) || sessionInfo.channelName || '';
         context.specifiedChannelName = channelName;
 
         // 检查分块上传状态
