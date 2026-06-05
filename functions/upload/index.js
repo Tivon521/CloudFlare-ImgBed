@@ -74,30 +74,6 @@ export async function onRequest(context) {  // Contents of context object
 }
 
 
-const UPLOAD_CHANNEL_MAP = {
-    telegram: 'TelegramNew',
-    cfr2: 'CloudflareR2',
-    s3: 'S3',
-    discord: 'Discord',
-    huggingface: 'HuggingFace',
-    webdav: 'WebDAV',
-    external: 'External'
-};
-
-const DEFAULT_WEBDAV_CHANNEL_NAME = 'openlist';
-
-function normalizeUploadChannel(uploadChannel) {
-    return UPLOAD_CHANNEL_MAP[String(uploadChannel || '').toLowerCase()] || null;
-}
-
-function getAutoUploadChannel(fileType = '') {
-    const normalizedType = String(fileType || '').toLowerCase();
-    if (normalizedType.startsWith('image/')) {
-        return 'TelegramNew';
-    }
-    return 'WebDAV';
-}
-
 // 通用文件上传处理函数
 async function processFileUpload(context, formdata = null) {
     const { request, url } = context;
@@ -108,7 +84,7 @@ async function processFileUpload(context, formdata = null) {
     // 将 formdata 存储在 context 中
     context.formdata = formdata;
 
-    // 获得上传渠道类型。显式 URL 参数优先；未指定时按文件 MIME 类型自动分流。
+    // 获得上传渠道类型
     const urlParamUploadChannel = url.searchParams.get('uploadChannel');
     // 获得指定的渠道名称（可选）
     const urlParamChannelName = url.searchParams.get('channelName');
@@ -123,17 +99,41 @@ async function processFileUpload(context, formdata = null) {
     // 路径安全性处理：防止路径穿越和特殊字符注入
     uploadFolder = sanitizeUploadFolder(uploadFolder);
 
+    let uploadChannel = 'TelegramNew';
+    switch (urlParamUploadChannel) {
+        case 'telegram':
+            uploadChannel = 'TelegramNew';
+            break;
+        case 'cfr2':
+            uploadChannel = 'CloudflareR2';
+            break;
+        case 's3':
+            uploadChannel = 'S3';
+            break;
+        case 'discord':
+            uploadChannel = 'Discord';
+            break;
+        case 'huggingface':
+            uploadChannel = 'HuggingFace';
+            break;
+        case 'webdav':
+            uploadChannel = 'WebDAV';
+            break;
+        case 'external':
+            uploadChannel = 'External';
+            break;
+        default:
+            uploadChannel = 'TelegramNew';
+            break;
+    }
+
+    // 将指定的渠道名称存入 context，供后续上传函数使用
+    context.specifiedChannelName = urlParamChannelName || null;
+
     // 获取文件信息
     const time = new Date().getTime();
     const file = formdata.get('file');
-    if (!file) {
-        return createResponse('Error: No file provided', { status: 400 });
-    }
     const fileType = file.type;
-    const uploadChannel = normalizeUploadChannel(urlParamUploadChannel) || getAutoUploadChannel(fileType);
-
-    // 将指定的渠道名称存入 context，供后续上传函数使用。自动 WebDAV 分流默认使用 openlist。
-    context.specifiedChannelName = urlParamChannelName || (uploadChannel === 'WebDAV' ? DEFAULT_WEBDAV_CHANNEL_NAME : null);
     let fileName = file.name;
     const fileSizeBytes = file.size; // 文件大小，单位字节
     const fileSize = (fileSizeBytes / 1024 / 1024).toFixed(2); // 文件大小，单位MB
